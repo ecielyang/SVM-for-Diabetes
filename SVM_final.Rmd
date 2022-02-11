@@ -1,0 +1,195 @@
+---
+title: "SVM_draft2"
+output: pdf_document
+---
+Support-Vector Machine is a supervised learning model applied in binary classification. SVM constructs a hyperplane to separate the binary data into two-part, which minimizes the misclassification error and maximizes the margin effectively.
+ SVM can transpose the data into high-dimension space by kernels, then Fit a support-vector classifier in the enlarged space. With the diabetes dataset, we compared three kernel performances (radial, linear, and polynomial) and found that Linear-SVM is preferred with high accuracy and efficiency and is easy to interpret.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+set.seed (1)
+# libraries may need
+library(e1071) #SVM
+library(caret) #select tuning parameters
+library(pROC)
+library(mlbench)
+```
+
+```{r}
+# data preparation
+```{r}
+set.seed (1)
+diabetes<- read.csv('/Users/eciel/Desktop/y3s1/3612/project/diabetes.csv',header=TRUE)
+attach(diabetes)
+library(missForest)
+for (i in 2 : nrow(diabetes)){
+  for (j in 2 : (ncol(diabetes) - 1))
+    if (diabetes[i,j] == 0)
+      diabetes[i,j] = NA
+}
+diabetes_imputed <- missForest(diabetes)
+attach(diabetes_imputed)
+attach(diabetes_imputed$ximp)
+diabetes = diabetes_imputed$ximp
+head(diabetes)
+```
+```{r}
+# Since the range of "DiabetesPedigreeFunction" is in [0, 1] and "Glucose" is in [0, 100]. 
+#Without domination by large value data, we scale the data in to range[0, 1].
+diabetes_s = as.data.frame(scale(diabetes[,-9]))
+diabetes_s$Outcome = diabetes$Outcome
+str(diabetes_s)
+```
+
+```{r}
+# Split the data into teainning data and test data
+set.seed (1)
+ind = sample(2, nrow(diabetes_s), replace=TRUE, prob=c(0.75,0.25))
+train = diabetes_s[ind==1,]
+test = diabetes_s[ind==2,]
+```
+
+# Perform SVM with cross-validation with k = 10 by tune() function. Since there are different kernal can be choose in SVM algorithm, we caompare models with radial, linear and polynomial kernals:
+### Use radial kernal with full model
+```{r}
+set.seed(1)
+svm.radial.tune <- tune(svm, train.x=train, train.y=train$Outcome, 
+            data = train, kernel="radial", ranges=list(cost=10^(-1:2), gamma=c(0.005, 0.01, 0.05, 0.1, 1, 10)))
+summary(svm.radial.tune)
+#Gives an optimal cost to be 1 and a gamma value of 0.01
+svm.radial <- svm(train$Outcome ~ ., data = train, type='C-classification',kernel="radial", cost=1, gamma=0.01)
+summary(svm.radial)
+# predict on the test data
+yt = predict(svm.radial, newdata = test)
+#accuracy of the model
+table = table(test[, 9], yt)
+table
+acc.svm.radial.tune = (table[1,1] + table[2,2]) / (table[1,1] + table[2,2] + table[1,2] + table[2,1])
+acc.svm.radial.tune
+```
+### accuracy of the SVM radial kernal full model is  0.7301587
+#Use linear kernal 
+```{r}
+set.seed(1)
+svm.linear.tune<- tune(svm, train.x=train, train.y=train$Outcome, 
+            kernel="linear", ranges=list(cost=10^(-1:2), gamma=c(0.005, 0.01, 0.05, 0.1, 1, 10)))
+summary(svm.linear.tune)
+#Gives an optimal cost to be 0.1 and a gamma value of 0.005
+svm.linear <- svm(Outcome ~ ., data=train, type='C-classification',kernel="linear", cost=0.1, gamma=0.005)
+summary(svm.linear)
+# predict on the test data
+y.svm.linear = predict(svm.linear, newdata = test)
+#accuracy of the model is 0.7407407
+table = table(test[, 9], y.svm.linear)
+acc.svm.linear.tune = (table[1,1] + table[2,2]) / (table[1,1] + table[2,2] + table[1,2] + table[2,1])
+acc.svm.linear.tune
+```
+### accuracy of the SVM linear kernal full model is  0.7566138
+
+### Use polynomial kernal 
+```{r}
+set.seed(1)
+svm.polynomial.tune<- tune(svm, train.x=train, train.y=train$Outcome, 
+            kernel="polynomial", ranges=list(cost=10^(-1:2), gamma=c(0.005, 0.01, 0.05, 0.1, 1, 10)))
+summary(svm.polynomial.tune)
+#Gives an optimal cost to be 1 and a gamma value of 1
+svm.polynomial <- svm(Outcome ~ ., data=train, type='C-classification',kernel="polynomial", cost=1, gamma=1)
+summary(svm.polynomial)
+# predict on the test data
+y.svm.polynomial = predict(svm.polynomial, newdata = test)
+#accuracy of the model is 0.6772487
+table = table(test[, 9], y.svm.polynomial)
+table
+acc.svm.polynomial.tune = (table[1,1] + table[2,2]) / (table[1,1] + table[2,2] + table[1,2] + table[2,1])
+acc.svm.polynomial.tune
+```
+### accuracy of the SVM polynomial kernal full model is  0.6931217
+
+### By comparing the accuracy, we choose the SVM linear model. Another advantage with linear kernal is that the model is easy to be interperated than radial or polynoamial kernal model.
+
+### Part2: feature selection:
+# We can observe that there exist some variable that are highly correlated with each other, we should feature selection in SVM
+Since seven variables are included in the dataset, it is time-consuming to obtain all of them when clarifying a Pima Indian Diabetes patient. We can consider reducing the model variables and selecting important features required by SVM. The decision tree is a popular algorithm that can identify statistical features having high information gain and thus reduce variables in the SVM model(Sugumaran et al., 2007). With the feature importance ranking in the decision tree, we fit the SVM model with different variables. By comparing the prediction accuracy and ROC curve, we choose SVM prediction with “” “” “” features. The reduced model can clarify a Pima Indian Diabetes patient with 70% accuracy. It can accelerate the diagnosis of diabetes with high prediction accuracy.
+
+```{r}
+cor(diabetes_s[, -9])
+```
+
+```{r}
+set.seed(1)
+svm.linear.tree3 <- tune(svm, train.x= train$Glucose + train$BMI + train$Age, train.y=train$Outcome, kernel="linear", ranges=list(cost=10^(-1:2), gamma=c(0.005, 0.01, 0.05, 0.1, 1, 10)))
+summary(svm.linear.tree3)
+#Gives an optimal cost to be 1 and a gamma value of 0.005
+
+svm.linear3 <- svm(Outcome ~ train$Glucose + train$BMI + train$Age, data=train, type='C-classification',kernel="linear", cost=1, gamma=0.005)
+summary(svm.linear.3)
+svm.3.predict <- predict(svm.linear3, newdata=test[c(2,6,7,3,8)])
+
+# predict on the test data
+y.3 = predict(svm.linear.3, newdata = test[c(2, 6, 8)])
+#accuracy of the model is 0.7619048
+table = table(y.3[1:189], test$Outcome)
+table
+acc.svm.linear.tune.tree3 = (table[1,1] + table[2,2]) / (table[1,1] + table[2,2] + table[1,2] + table[2,1])
+acc.svm.linear.tune.tree3
+```
+### accuracy of the SVM linear kernal full model is  0.7619048
+
+```{r}
+set.seed(1)
+svm.linear.tree4 <- tune(svm, train.x= train$Glucose + train$BMI + train$Age + train$DiabetesPedigreeFunction, train.y=train$Outcome, kernel="linear", ranges=list(cost=10^(-1:2), gamma=c(0.005, 0.01, 0.05, 0.1, 1, 10)))
+summary(svm.linear.tree4)
+#Gives an optimal cost to be 1 and a gamma value of 0.005
+svm.linear.4 <- svm(Outcome ~ train$Glucose + train$BMI + train$Age + train$DiabetesPedigreeFunction, data=train, type='C-classification',kernel="linear", cost=1, gamma=0.005)
+summary(svm.linear.4)
+# predict on the test data
+y.4 = predict(svm.linear.4, newdata = test[c(2, 6, 7, 8)])
+#accuracy of the model is 0.7619048
+table = table(y.4[1:189], test$Outcome)
+table
+acc.svm.linear.tune.tree3 = (table[1,1] + table[2,2]) / (table[1,1] + table[2,2] + table[1,2] + table[2,1])
+acc.svm.linear.tune.tree3
+```
+```{r}
+set.seed(1)
+svm.linear.tree5 <- tune(svm, train.x= train$Glucose + train$BMI + train$Age + train$DiabetesPedigreeFunction + train$BloodPressure, train.y=train$Outcome, kernel="linear", ranges=list(cost=10^(-1:2), gamma=c(0.005, 0.01, 0.05, 0.1, 1, 10)))
+summary(svm.linear.tree5)
+#Gives an optimal cost to be 1 and a gamma value of 0.005
+svm.linear.5 <- svm(Outcome ~ train$Glucose + train$BMI + train$Age + train$DiabetesPedigreeFunction + train$BloodPressure, data=train, type='C-classification',kernel="linear", cost=1, gamma=0.005)
+summary(svm.linear.5)
+# predict on the test data
+y.5 = predict(svm.linear.5, newdata = test[c(2, 3, 6, 7, 8)])
+#accuracy of the model is 0.7619048
+table5 = table(y.5[1:189], test$Outcome)
+table5
+acc.svm.linear.tune.tree5 = (table5[1,1] + table5[2,2]) / (table5[1,1] + table5[2,2] + table5[1,2] + table5[2,1])
+acc.svm.linear.tune.tree5
+```
+# Roc curve
+```{r}
+library(ROCR) 
+rocplot=function(pred, truth, ...){
+        predob = prediction (pred, truth)
+        perf = performance (predob , "tpr", "fpr")
+        plot(perf ,...)}
+
+fitted=attributes(predict(svm.linear,test,decision.values=T))$decision.values
+rocplot(fitted,test[,9],main="Test Data", col = "black")
+fitted=attributes(predict(svm.radial,test,decision.values=T))$decision.values
+rocplot(fitted,test[,9],add=T, col="red")
+fitted=attributes(predict(svm.radial.r,test,decision.values=T))$decision.values
+rocplot(fitted,test[,9],add=T, col="blue")
+fitted=attributes(predict(svm.linear.r,test,decision.values=T))$decision.values
+rocplot(fitted,test[,9],add=T, col="green")
+
+```
+
+
+
+(Sugumaran, V., Muralidharan, V., & Ramachandran, K. I. (2007). Feature selection using decision tree and classification through proximal support vector machine for fault diagnostics of roller bearing. Mechanical systems and signal processing, 21(2), 930-942.
+).
+
+
