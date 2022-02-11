@@ -1,5 +1,5 @@
 # SVM-for-Diabetes
-Support-Vector Machine applied in binary classification.
+Support-Vector Machine applied in binary classification based on R.
 The reduced model can clarify a Pimas Indians Diabetes patient with 78.84% accuracy. 
 
 
